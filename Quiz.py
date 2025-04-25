@@ -1,153 +1,114 @@
-# glendon
-# Quiz game
-# trying to see if AI can generate questions
-# have fun....
-
+# Glendon's AI Learning Quiz for Kids
+# Feed a .txt file (chapter), and the AI makes a quiz!
 
 from transformers import pipeline
 import random
+import os
 
-# Load the text2text-generation model
+# Load the question generation model
 question_generator = pipeline("text2text-generation", model="t5-small")
 
-# Define domain-specific texts
-domain_texts = {
-    "history": [
-        "The American Revolution was a colonial revolt that occurred between 1765 and 1783. "
-        "The thirteen American colonies defeated the British and gained independence. "
-        "Key figures include George Washington, Thomas Jefferson, and Benjamin Franklin.",
-        "World War II was a global conflict that lasted from 1939 to 1945. "
-        "It involved most of the world's nations, including the Allies and the Axis powers. "
-        "The war ended with the surrender of Germany and Japan.",
-    ],
-    "science": [
-        "The solar system consists of the Sun and the objects that orbit it, including planets, moons, asteroids, and comets. "
-        "The eight planets in the solar system are Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune. "
-        "Earth is the third planet from the Sun and is the only known planet to support life.",
-        "Photosynthesis is the process by which green plants use sunlight to convert carbon dioxide and water into glucose and oxygen. "
-        "This process is essential for life on Earth as it produces oxygen and provides energy for plants.",
-    ],
-    "geography": [
-        "The Earth is divided into seven continents: Asia, Africa, North America, South America, Antarctica, Europe, and Australia. "
-        "The largest continent by area is Asia, and the smallest is Australia. "
-        "The longest river in the world is the Nile, and the highest mountain is Mount Everest.",
-        "The Amazon Rainforest is the largest tropical rainforest in the world, covering most of the Amazon basin in South America. "
-        "It is home to millions of species of plants, animals, and insects.",
-    ],
-    "technology": [
-        "Artificial intelligence (AI) is the simulation of human intelligence in machines. "
-        "AI is used in various fields, including healthcare, finance, and transportation. "
-        "Key technologies include machine learning, natural language processing, and computer vision.",
-        "Blockchain is a decentralized digital ledger technology used to record transactions across multiple computers. "
-        "It is the underlying technology behind cryptocurrencies like Bitcoin and Ethereum.",
-    ],
-    "literature": [
-        "William Shakespeare was an English playwright and poet, widely regarded as one of the greatest writers in the English language. "
-        "His famous works include 'Romeo and Juliet', 'Hamlet', and 'Macbeth'.",
-        "Jane Austen was an English novelist known for her works such as 'Pride and Prejudice' and 'Sense and Sensibility'. "
-        "Her novels often explore themes of love, marriage, and social class.",
-    ],
-}
+def read_text_file(filepath):
+    """Read content from a .txt file."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError:
+        print("File not found. Please make sure the file path is correct.")
+        return None
 
 def generate_quiz(text, num_questions=5):
     """
-    Generates quiz questions from a given text.
+    Generates question-answer pairs from the input text.
     """
-    # Format the input for question generation
-    input_text = f"generate questions: {text}"
-    
-    # Use beam search to generate multiple questions
-    questions = question_generator(
+    input_text = f"generate question: {text[:500]}"  # Use first 500 characters to avoid overload
+    results = question_generator(
         input_text,
-        max_length=50,
+        max_length=64,
         num_return_sequences=num_questions,
-        num_beams=5,  # Enable beam search
-        early_stopping=True  # Stop early if the model is confident
+        num_beams=5,
+        early_stopping=True
     )
-    return [q['generated_text'] for q in questions]
+
+    quiz_pairs = []
+    for r in results:
+        output = r["generated_text"]
+
+        # Basic extraction if format is like "Question? Answer"
+        if "?" in output:
+            question = output.split("?")[0] + "?"
+            answer = output.split("?")[1].strip().lstrip("A:").strip()
+            quiz_pairs.append((question, answer if answer else "Unknown"))
+        else:
+            quiz_pairs.append((output.strip(), "Unknown"))
+
+    return quiz_pairs
 
 def generate_choices(correct_answer, text):
     """
-    Generates 4 choices for a question, with 1 correct answer and 3 incorrect answers.
+    Generates 4 answer choices: 1 correct + 3 distractors from the text.
     """
-    # Create a list of incorrect answers by modifying the correct answer
-    incorrect_answers = [
-        correct_answer.replace("Earth", "Mars"),
-        correct_answer.replace("Sun", "Moon"),
-        correct_answer.replace("solar system", "galaxy"),
-    ]
-    
-    # Combine correct and incorrect answers
+    words = list(set(text.split()))
+    words = [w.strip(",.?!") for w in words if w.istitle() or w.isalpha()]
+    random.shuffle(words)
+
+    incorrect_answers = []
+    for word in words:
+        if word.lower() not in correct_answer.lower() and word.lower() != correct_answer.lower():
+            incorrect_answers.append(word)
+        if len(incorrect_answers) == 3:
+            break
+
     choices = [correct_answer] + incorrect_answers
-    
-    # Shuffle the choices
     random.shuffle(choices)
-    
     return choices
 
 def run_quiz():
     """
-    Runs the quiz by generating questions, asking the user, and checking answers.
+    Runs the quiz by loading a file, generating questions, and scoring answers.
     """
-    print("Welcome to the AI-Powered Quiz Maker!")
-    print("You can choose from the following domains: history, science, geography, technology, and literature.")
-    
-    # Display domain options
-    print("\nSelect a domain for your quiz:")
-    for i, domain in enumerate(domain_texts.keys(), 1):
-        print(f"{i}. {domain.capitalize()}")
-    
-    # Get user's domain choice
-    choice = input("\nEnter the number of your choice: ").strip()
-    while not choice.isdigit() or int(choice) not in range(1, len(domain_texts) + 1):
-        print("Invalid choice. Please try again.")
-        choice = input("Enter the number of your choice: ").strip()
-    
-    # Get the selected domain
-    selected_domain = list(domain_texts.keys())[int(choice) - 1]
-    print(f"\nYou selected: {selected_domain.capitalize()}")
-    
-    # Randomly select a text from the domain
-    text = random.choice(domain_texts[selected_domain])
-    
-    # Generate questions
+    print("📚 Welcome to Glendon's AI-Powered Learning Quiz!")
+    print("Give me a chapter (.txt file), and I’ll create a fun quiz for you.\n")
+
+    filepath = input("📄 Enter the full path to the .txt file (e.g., chapters/science_ch1.txt): ").strip()
+    if not os.path.exists(filepath):
+        print("❌ That file does not exist. Please try again.")
+        return
+
+    text = read_text_file(filepath)
+    if not text:
+        return
+
+    print("\n✨ Generating your quiz... Please wait.\n")
     questions = generate_quiz(text, num_questions=5)
-    
+
     score = 0
-    
-    # Ask each question
-    for i, question in enumerate(questions, 1):
-        print(f"\nQuestion {i}: {question}")
-        
-        # Generate choices (1 correct, 3 incorrect)
-        correct_answer = question  # Use the generated question as the correct answer
+
+    for i, (question, correct_answer) in enumerate(questions, 1):
+        print(f"\n📝 Question {i}: {question}")
         choices = generate_choices(correct_answer, text)
-        
-        # Display choices
+
         for j, choice in enumerate(choices, 1):
             print(f"{j}. {choice}")
-        
-        # Get user's answer
-        user_choice = input("Enter the number of your answer: ").strip()
+
+        user_choice = input("👉 Enter the number of your answer: ").strip()
         while not user_choice.isdigit() or int(user_choice) not in range(1, 5):
-            print("Invalid choice. Please try again.")
-            user_choice = input("Enter the number of your answer: ").strip()
-        
-        # Check if the answer is correct
-        if choices[int(user_choice) - 1] == correct_answer:
-            print("Correct!")
+            print("Invalid choice. Please enter a number between 1 and 4.")
+            user_choice = input("👉 Enter your answer: ").strip()
+
+        if choices[int(user_choice) - 1].lower() == correct_answer.lower():
+            print("✅ Correct!")
             score += 1
         else:
-            print(f"Wrong! The correct answer is: {correct_answer}")
-    
-    # Display final score
-    print(f"\nQuiz ended! Your score is {score}/{len(questions)}")
+            print(f"❌ Oops! The correct answer was: {correct_answer}")
+
+    print(f"\n🎉 Quiz finished! You scored {score}/{len(questions)}")
     if score == len(questions):
-        print("Congratulations! You got all the questions right!")
+        print("🏆 Excellent! You nailed it!")
     elif score >= len(questions) / 2:
-        print("Well done! You did a good job.")
+        print("👍 Good job! Keep learning!")
     else:
-        print("Keep practicing! You'll get better.")
+        print("💡 Keep practicing. You're getting better every time!")
 
 if __name__ == "__main__":
     run_quiz()
